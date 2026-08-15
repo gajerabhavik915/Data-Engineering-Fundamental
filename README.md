@@ -152,10 +152,251 @@ Your LCBO reconciliation work maps to: ELT + daily batch + timestamp watermark C
 
 
 
+## What is the need of Data Modeling - Star Schema and Snowflake Schema.
+Yes — your understanding is basically correct, but there is one important reason why we still do it.
+
+The key idea is:
+
+A star schema is not primarily created because the flat table doesn't contain enough information. It's created to make the data model more efficient, consistent, maintainable, and easier to analyze.
+
+Let's use your example.
+
+1. Your current flat table
+
+Imagine you have:
+
+Order_ID   	Item_ID	   Date	   Customer_ID	  Address	   Revenue   	Vendor_ID   	Vendor_Name
+O001	        I101	     Aug 1	  C001	        Toronto	    100	        V01	          ABC
+O002	        I102	     Aug 1	  C001	        Toronto	    200	        V01	          ABC
+O003	        I103	     Aug 2  	C002        	Mississauga	150        	V02	          XYZ
+O004	        I101	     Aug 2  	C001        	Toronto	     120       	V01	          ABC
+
+It works perfectly fine.
+
+You can write:
+
+SELECT Vendor_Name, SUM(Revenue)
+FROM Orders
+GROUP BY Vendor_Name;
+
+So your question is very valid:
+
+"Why split it into multiple tables if I can just query this table?"
+
+2. The first problem: duplication
+
+Look at:
+
+C001 → Toronto
+C001 → Toronto
+C001 → Toronto
+C001 → Toronto
+...
+
+And:
+
+V01 → ABC
+V01 → ABC
+V01 → ABC
+V01 → ABC
+...
+
+If you have 100 million transactions, you could potentially store:
+
+Vendor_ID = V01
+Vendor_Name = ABC
+
+millions of times.
+
+Instead, you can have:
+
+Fact_Sales
+Order_ID 	Item_ID	  Date_ID    	Customer_ID	 Vendor_ID 	Revenue
+O001	     I101	     20260801	   C001	        V01	         100
+O002	     I102     	20260801	   C001        	V01	         200
+O003	     I103	     20260802	   C002	        V02	         150
+O004	     I101	     20260802	   C001	        V01	         120
+
+Dim_Customer
+Customer_ID	    Address
+C001	            Toronto
+C002	            Mississauga
+
+Now the fact table only stores:
+
+Vendor_ID = V01
+
+rather than repeatedly storing:
+
+Vendor_ID = V01
+Vendor_Name = ABC
+
+3. But here's the bigger reason: different purposes
+
+This is the part that's really important.
+
+Your fact table answers:
+
+"What happened?"
+
+Your dimension tables answer:
+
+"Who/what/when/where did it happen?"
+
+For example:
+
+5. The biggest benefit in Power BI
+
+This becomes especially important in Power BI.
+
+Imagine your flat table contains:
+
+100 million rows
+
+and you have:
+
+Vendor Name
+Vendor Address
+Vendor City
+Vendor Province
+Customer Name
+Customer Address
+Customer City
+Product Name
+Product Category
+Product Brand
+...
+
+Those descriptive columns can contain huge amounts of repeated text.
+
+Instead:
+
+Fact_Sales
+100 million rows
+
+contains mostly:
+
+Customer_ID
+Product_ID
+Vendor_ID
+Date_ID
+Revenue
+Quantity
+Cost
+
+while dimensions contain the descriptive information.
+
+Power BI's VertiPaq engine can compress this structure very effectively, and the model becomes easier to work with.
 
 
+6. Another HUGE advantage: consistency
 
+Suppose you have:
 
+Vendor_ID = V01
+Vendor_Name = ABC Logistics
+
+appearing in 20 million rows.
+
+Someone accidentally changes some rows to:
+
+ABC Logistic
+
+and others to:
+
+ABC Logistics
+
+Now your report might show:
+
+ABC Logistics       $10M
+ABC Logistic         $2M
+
+Oops.
+
+With a dimension:
+
+Dim_Vendor
+V01 → ABC Logistics
+
+there is one authoritative definition.
+
+Everything referencing V01 gets:
+
+ABC Logistics
+
+This is one of the biggest advantages of dimensional modeling.
+
+9. Your statement is actually describing the process correctly
+
+You said:
+
+"normalize table, keep numerical values to one table and categorical into dimensional tables, and then when you want to analyse data you join these tables."
+
+You're very close, but I'd change one thing:
+
+Don't think:
+
+Numerical values → Fact
+Categorical values → Dimension
+
+That's not always correct.
+
+Think:
+
+Fact table
+
+Contains measurements/events at a defined grain.
+
+For example:
+
+Order_ID
+Date_ID
+Customer_ID
+Product_ID
+Vendor_ID
+Quantity
+Revenue
+Cost
+Profit
+Dimension table
+
+Contains descriptive attributes used to slice/filter/group those events.
+
+For example:
+
+Customer_ID
+Customer_Name
+City
+Province
+Customer_Type
+
+The most important concept here is actually grain.
+
+For example:
+
+One row in Fact_Sales represents one order line.
+
+Once you define that, your fact and dimensions become much easier to design.
+
+So why do we do it?
+
+Mainly because it gives you:
+
+1. Less duplicated descriptive data
+
+2. Better compression/performance in analytical systems
+
+3. One consistent definition of business entities
+
+4. Easier filtering/grouping in Power BI
+
+5. Easier maintenance
+
+6. Clear separation between events and descriptions
+
+7. Better scalability as the dataset grows
+
+8. A clean semantic model for business users
 
 
 
